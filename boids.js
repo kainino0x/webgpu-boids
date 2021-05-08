@@ -123,30 +123,68 @@ document.body.appendChild(stats.dom);
       // Rendering
       // **********************************************************************
 
-      let boid_vertices: array<vec2<f32>, 3> = array<vec2<f32>, 3>(
-          vec2<f32>(-0.01, -0.02),
-          vec2<f32>( 0.01, -0.02),
-          vec2<f32>( 0.00,  0.02));
+      let boid_positions: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
+          vec2<f32>(-0.01, -0.02), vec2<f32>( 0.00, -0.02), vec2<f32>( 0.00,  0.02),
+          vec2<f32>( 0.00, -0.02), vec2<f32>( 0.01, -0.02), vec2<f32>( 0.00,  0.02),
+        );
+      let boid_normals: array<vec3<f32>, 2> = array<vec3<f32>, 2>(
+          vec3<f32>(-0.6, 0.2, 1.0),
+          vec3<f32>( 0.6, 0.2, 1.0),
+        );
+
+      struct Varying {
+        [[builtin(position)]] pos: vec4<f32>;
+        [[location(0)]] position: vec2<f32>;
+        [[location(1)]] normal: vec3<f32>;
+      };
 
       [[stage(vertex)]]
       fn renderBoids_vert(
           [[builtin(vertex_index)]] VertexIndex: u32,
           [[location(0)]] a_particlePos: vec2<f32>,
           [[location(1)]] a_particleVel: vec2<f32>
-        ) -> [[builtin(position)]] vec4<f32> {
+        ) -> Varying {
         let angle: f32 = -atan2(a_particleVel.x, a_particleVel.y);
-        let boid_vertex: vec2<f32> = boid_vertices[VertexIndex];
+
+        let boid_vtxpos: vec2<f32> = boid_positions[VertexIndex];
+        let boid_normal: vec3<f32> = boid_normals[VertexIndex / 3u];
+
         // TODO: change rotation into a matrix
-        let pos: vec2<f32> = vec2<f32>(
-            (boid_vertex.x * cos(angle)) - (boid_vertex.y * sin(angle)),
-            (boid_vertex.x * sin(angle)) + (boid_vertex.y * cos(angle)));
-        return vec4<f32>(pos + a_particlePos, 0.0, 1.0);
+        let rel_pos: vec2<f32> = vec2<f32>(
+            (boid_vtxpos.x * cos(angle)) - (boid_vtxpos.y * sin(angle)),
+            (boid_vtxpos.x * sin(angle)) + (boid_vtxpos.y * cos(angle)));
+        let rel_nor: vec3<f32> = vec3<f32>(
+            (boid_normal.x * cos(angle)) - (boid_normal.y * sin(angle)),
+            (boid_normal.x * sin(angle)) + (boid_normal.y * cos(angle)),
+            boid_normal.z);
+
+        var varying: Varying;
+        varying.position = rel_pos + a_particlePos;
+        varying.pos = vec4<f32>(varying.position, 0.0, 1.0);
+        varying.normal = rel_nor;
+        return varying;
       }
 
       [[stage(fragment)]]
-      fn renderBoids_frag() -> [[location(0)]] vec4<f32> {
-        // TODO: lighting?
-        return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+      fn renderBoids_frag(v: Varying) -> [[location(0)]] vec4<f32> {
+        var color: vec4<f32> = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+        {
+          // Constant light position
+          let lightPos: vec3<f32> = vec3<f32>(0.5, -0.5, 0.5);
+          let position: vec3<f32> = vec3<f32>(v.position, 0.0);
+          let lightDir: vec3<f32> = lightPos - position;
+          let light: f32 = dot(normalize(v.normal), normalize(lightDir)) / (length(lightDir) + 0.5);
+          color.r = light;
+        }
+        {
+          // Constant light position
+          let lightPos: vec3<f32> = vec3<f32>(-0.5, 0.5, 0.5);
+          let position: vec3<f32> = vec3<f32>(v.position, 0.0);
+          let lightDir: vec3<f32> = lightPos - position;
+          let light: f32 = dot(normalize(v.normal), normalize(lightDir)) / (length(lightDir) + 0.5);
+          color.g = light;
+        }
+        return color;
       }`,
     });
     // **************************************************************************
@@ -286,7 +324,7 @@ document.body.appendChild(stats.dom);
                 // Use multisampleColorTextureView as "scratch space" for multisampled rendering
                 view: multisampleColorTextureView,
                 // Load a constant color (dark blue) at the beginning of the render pass
-                loadValue: [0.1, 0.0, 0.5, 1.0],
+                loadValue: [0.1, 0.0, 0.3, 1.0],
                 // Resolve multisampled rendering into the canvas texture (to be set later)
                 resolveTarget: null,
                 // Multisampled rendering results can be discarded after resolve
@@ -322,7 +360,7 @@ document.body.appendChild(stats.dom);
         passEncoder.setPipeline(renderBoids_pipeline);
         // Render from the particleBuffers[x] that was just updated
         passEncoder.setVertexBuffer(0, particleBuffers[(frameNum + 1) % 2]);
-        passEncoder.draw(3, NUM_BOIDS);
+        passEncoder.draw(6, NUM_BOIDS);
         passEncoder.endPass();
     }
     function frame() {

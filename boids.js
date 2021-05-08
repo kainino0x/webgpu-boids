@@ -243,10 +243,10 @@ document.body.appendChild(stats.dom);
     new Float32Array(mappedRange).set([
         0.04,
         0.1,
-        0.025,
-        0.025,
-        0.02,
+        0.100,
+        0.050,
         0.05,
+        0.02,
         0.005, // rule3Scale
     ]);
     simParamBuffer.unmap(); // Unmap it (detaches the ArrayBuffer)

@@ -157,14 +157,13 @@ document.body.appendChild(stats.dom);
         let boid_vtxpos: vec2<f32> = boid_positions[VertexIndex];
         let boid_normal: vec3<f32> = boid_normals[VertexIndex / 3u];
 
+        let rotation: mat2x2<f32> = mat2x2<f32>(
+            vec2<f32>(cos(angle), sin(angle)),
+            vec2<f32>(-sin(angle), cos(angle)));
+
         // TODO: change rotation into a matrix
-        let rel_pos: vec2<f32> = vec2<f32>(
-            (boid_vtxpos.x * cos(angle)) - (boid_vtxpos.y * sin(angle)),
-            (boid_vtxpos.x * sin(angle)) + (boid_vtxpos.y * cos(angle)));
-        let rel_nor: vec3<f32> = vec3<f32>(
-            (boid_normal.x * cos(angle)) - (boid_normal.y * sin(angle)),
-            (boid_normal.x * sin(angle)) + (boid_normal.y * cos(angle)),
-            boid_normal.z);
+        let rel_pos: vec2<f32> = rotation * boid_vtxpos;
+        let rel_nor: vec3<f32> = vec3<f32>(rotation * boid_normal.xy, boid_normal.z);
 
         var varying: Varying;
         varying.position = rel_pos + a_particlePos;

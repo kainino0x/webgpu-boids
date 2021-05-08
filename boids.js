@@ -10,7 +10,7 @@ document.body.appendChild(stats.dom);
     const HEIGHT = 800;
     const SWAP_CHAIN_FORMAT = 'bgra8unorm';
     const DEPTH_FORMAT = 'depth24plus';
-    const NUM_BOIDS = 1500;
+    const NUM_BOIDS = 500;
     // **************************************************************************
     // Device and canvas initialization
     // **************************************************************************
@@ -23,6 +23,8 @@ document.body.appendChild(stats.dom);
     const cvs = document.getElementById('cvs');
     cvs.width = WIDTH;
     cvs.height = HEIGHT;
+    cvs.style.width = (WIDTH / window.devicePixelRatio) + 'px';
+    cvs.style.width = (WIDTH / window.devicePixelRatio) + 'px';
     const ctx = cvs.getContext('gpupresent');
     assert(ctx !== null, 'Unable to create gpupresent context');
     // Pair them to create a "swap chain" to vend render target textures
@@ -121,43 +123,44 @@ document.body.appendChild(stats.dom);
     // Shader module can define multiple entry points (here, vertex and fragment).
     const renderShaderModule = device.createShaderModule({
         code: `
-      let boid_positions: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
-          vec2<f32>(-0.01, -0.02), vec2<f32>( 0.00, -0.02), vec2<f32>( 0.00,  0.02),
-          vec2<f32>( 0.00, -0.02), vec2<f32>( 0.01, -0.02), vec2<f32>( 0.00,  0.02),
+      let boid_positions: array<vec3<f32>, 6> = array<vec3<f32>, 6>(
+          vec3<f32>(-0.04, -0.05, 0.50), vec3<f32>( 0.00, -0.04, 0.47), vec3<f32>( 0.00,  0.04, 0.50),
+          vec3<f32>( 0.00, -0.04, 0.47), vec3<f32>( 0.04, -0.05, 0.50), vec3<f32>( 0.00,  0.04, 0.50),
         );
       let boid_normals: array<vec3<f32>, 2> = array<vec3<f32>, 2>(
-          vec3<f32>(-0.6, 0.2, 1.0),
-          vec3<f32>( 0.6, 0.2, 1.0),
+          vec3<f32>(-0.6, 0.2, -1.0),
+          vec3<f32>( 0.6, 0.2, -1.0),
         );
 
       struct Varying {
         [[builtin(position)]] pos: vec4<f32>;
-        [[location(0)]] position: vec2<f32>;
+        [[location(0)]] vtxpos: vec3<f32>;
         [[location(1)]] normal: vec3<f32>;
+        [[location(2)]] index: u32;
       };
 
       [[stage(vertex)]]
       fn renderBoids_vert(
           [[builtin(vertex_index)]] VertexIndex: u32,
+          [[builtin(instance_index)]] InstanceIndex: u32,
           [[location(0)]] a_particlePos: vec2<f32>,
           [[location(1)]] a_particleVel: vec2<f32>
         ) -> Varying {
         let angle: f32 = -atan2(a_particleVel.x, a_particleVel.y);
 
-        let boid_vtxpos: vec2<f32> = boid_positions[VertexIndex];
+        let boid_vtxpos: vec3<f32> = boid_positions[VertexIndex];
         let boid_normal: vec3<f32> = boid_normals[VertexIndex / 3u];
 
-        let rotation: mat2x2<f32> = mat2x2<f32>(
-            vec2<f32>(cos(angle), sin(angle)),
-            vec2<f32>(-sin(angle), cos(angle)));
-
-        let rel_pos: vec2<f32> = rotation * boid_vtxpos;
-        let rel_nor: vec3<f32> = vec3<f32>(rotation * boid_normal.xy, boid_normal.z);
+        let rotation: mat3x3<f32> = mat3x3<f32>(
+            vec3<f32>(cos(angle), sin(angle), 0.0),
+            vec3<f32>(-sin(angle), cos(angle), 0.0),
+            vec3<f32>(0.0, 0.0, 1.0));
 
         var varying: Varying;
-        varying.position = rel_pos + a_particlePos;
-        varying.pos = vec4<f32>(varying.position, 0.0, 1.0);
-        varying.normal = rel_nor;
+        varying.vtxpos = rotation * boid_vtxpos + vec3<f32>(a_particlePos, 0.0);
+        varying.pos = vec4<f32>(varying.vtxpos, 1.0);
+        varying.normal = rotation * boid_normal;
+        varying.index = InstanceIndex;
         return varying;
       }
 
@@ -166,19 +169,20 @@ document.body.appendChild(stats.dom);
         var color: vec4<f32> = vec4<f32>(0.0, 0.0, 0.0, 1.0);
         {
           // Constant light position
-          let lightPos: vec3<f32> = vec3<f32>(0.5, -0.5, 0.5);
-          let position: vec3<f32> = vec3<f32>(v.position, 0.0);
-          let lightDir: vec3<f32> = lightPos - position;
+          let lightPos: vec3<f32> = vec3<f32>(0.5, -0.5, 0.3);
+          let lightDir: vec3<f32> = lightPos - v.vtxpos;
           let light: f32 = dot(normalize(v.normal), normalize(lightDir)) / (length(lightDir) + 0.5);
           color.r = light;
         }
         {
           // Constant light position
-          let lightPos: vec3<f32> = vec3<f32>(-0.5, 0.5, 0.5);
-          let position: vec3<f32> = vec3<f32>(v.position, 0.0);
-          let lightDir: vec3<f32> = lightPos - position;
+          let lightPos: vec3<f32> = vec3<f32>(-0.5, 0.5, 0.3);
+          let lightDir: vec3<f32> = lightPos - v.vtxpos;
           let light: f32 = dot(normalize(v.normal), normalize(lightDir)) / (length(lightDir) + 0.5);
           color.g = light;
+        }
+        if (v.index % 2u == 1u) {
+          color.b = 1.0;
         }
         return color;
       }`,
@@ -211,7 +215,11 @@ document.body.appendChild(stats.dom);
             ],
         },
         primitive: { topology: 'triangle-list' },
-        depthStencil: { format: DEPTH_FORMAT },
+        depthStencil: {
+            format: DEPTH_FORMAT,
+            depthWriteEnabled: true,
+            depthCompare: 'less',
+        },
         multisample: { count: 4 },
         fragment: {
             module: renderShaderModule,
@@ -323,6 +331,10 @@ document.body.appendChild(stats.dom);
     // Render loop
     // **************************************************************************
     let frameNum = 0;
+    let paused = false;
+    cvs.addEventListener('click', () => {
+        paused = !paused;
+    });
     function stepBoidsSimulation(commandEncoder) {
         const passEncoder = commandEncoder.beginComputePass();
         passEncoder.setPipeline(stepBoidsSimulation_pipeline);
@@ -343,14 +355,16 @@ document.body.appendChild(stats.dom);
     }
     function frame() {
         stats.begin();
-        const commandEncoder = device.createCommandEncoder();
-        {
-            stepBoidsSimulation(commandEncoder);
-            renderBoids(commandEncoder);
+        if (!paused) {
+            const commandEncoder = device.createCommandEncoder();
+            {
+                stepBoidsSimulation(commandEncoder);
+                renderBoids(commandEncoder);
+            }
+            const commandBuffer = commandEncoder.finish();
+            device.queue.submit([commandBuffer]);
+            frameNum++;
         }
-        const commandBuffer = commandEncoder.finish();
-        device.queue.submit([commandBuffer]);
-        frameNum++;
         stats.end();
         requestAnimationFrame(frame);
     }

@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "lib": [
+      "dom",
+      "es2017"
+    ],
+    "target": "es2017",
+    "typeRoots": [
+      "./node_modules/@webgpu/types",
+    ],
+    "module": "esnext",
+    /* Strict type-checking options */
+    "allowJs": false,
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+  },
+  "include": [
+    "boids.ts"
+  ]
+}

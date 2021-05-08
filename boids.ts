@@ -20,25 +20,25 @@ document.body.appendChild(stats.dom);
 
   // Device is initialized without a canvas. Can be used with zero or more canvases.
   assert('gpu' in navigator, 'WebGPU not supported');
-  const adapter = await navigator.gpu.requestAdapter();
+  const adapter: GPUAdapter | null = await navigator.gpu.requestAdapter();
   assert(adapter !== null, 'requestAdapter failed');
-  const device = await adapter.requestDevice();
+  const device: GPUDevice = await adapter.requestDevice();
 
   // Canvas context is initialized without a device
   const cvs = document.getElementById('cvs') as HTMLCanvasElement;
   cvs.width = WIDTH;
   cvs.height = HEIGHT;
-  const ctx = cvs.getContext('gpupresent');
+  const ctx: GPUCanvasContext | null = cvs.getContext('gpupresent');
   assert(ctx !== null, 'Unable to create gpupresent context');
 
   // Pair them to create a "swap chain" to vend render target textures
-  const swapChain = ctx.configureSwapChain({ device, format: SWAP_CHAIN_FORMAT });
+  const swapChain: GPUSwapChain = ctx.configureSwapChain({ device, format: SWAP_CHAIN_FORMAT });
 
   // **************************************************************************
   // Shaders
   // **************************************************************************
 
-  const computeShaderModule = device.createShaderModule({
+  const computeShaderModule: GPUShaderModule = device.createShaderModule({
     code: `
       struct Particle {
         pos: vec2<f32>;
@@ -124,17 +124,12 @@ document.body.appendChild(stats.dom);
         // Write back
         particlesB.particles[index].pos = vPos;
         particlesB.particles[index].vel = vVel;
-      }
-      `,
+      }`,
   });
 
-  const renderShaderModule = device.createShaderModule({
+  // Shader module can define multiple entry points (here, vertex and fragment).
+  const renderShaderModule: GPUShaderModule = device.createShaderModule({
     code: `
-
-      // **********************************************************************
-      // Rendering
-      // **********************************************************************
-
       let boid_positions: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
           vec2<f32>(-0.01, -0.02), vec2<f32>( 0.00, -0.02), vec2<f32>( 0.00,  0.02),
           vec2<f32>( 0.00, -0.02), vec2<f32>( 0.01, -0.02), vec2<f32>( 0.00,  0.02),
@@ -165,7 +160,6 @@ document.body.appendChild(stats.dom);
             vec2<f32>(cos(angle), sin(angle)),
             vec2<f32>(-sin(angle), cos(angle)));
 
-        // TODO: change rotation into a matrix
         let rel_pos: vec2<f32> = rotation * boid_vtxpos;
         let rel_nor: vec3<f32> = vec3<f32>(rotation * boid_normal.xy, boid_normal.z);
 
@@ -197,16 +191,16 @@ document.body.appendChild(stats.dom);
         }
         return color;
       }`,
-  })
+  });
 
   // **************************************************************************
   // Compute pipeline setup
   // **************************************************************************
 
-  const stepBoidsSimulation_pipeline = device.createComputePipeline({
+  const stepBoidsSimulation_pipeline: GPUComputePipeline = device.createComputePipeline({
     compute: {
       module: computeShaderModule,
-      entryPoint: 'stepBoidsSimulation'
+      entryPoint: 'stepBoidsSimulation', // Which entry point to use as compute shader
     }
   });
 
@@ -214,39 +208,30 @@ document.body.appendChild(stats.dom);
   // Render pipeline setup
   // **************************************************************************
 
-  const renderBoids_pipeline = device.createRenderPipeline({
+  const renderBoids_pipeline: GPURenderPipeline = device.createRenderPipeline({
     vertex: {
       module: renderShaderModule,
-      entryPoint: 'renderBoids_vert',
-      buffers: [
-        {
-          // instanced particles buffer
+      entryPoint: 'renderBoids_vert', // Which entry point to use as vertex shader
+      buffers: [ // <---- list of vertex buffers
+        { // <---- Layout of vertex buffer 0, instanced particles buffer
           arrayStride: 4 * 4,
           stepMode: 'instance',
-          attributes: [
-            // instance position
-            { shaderLocation: 0, offset: 0, format: 'float32x2' },
-            // instance velocity
-            { shaderLocation: 1, offset: 2 * 4, format: 'float32x2' },
+          attributes: [ // <---- list of attributes inside this vertex buffer
+            { format: 'float32x2', offset: 0, shaderLocation: 0 }, // particle position
+            { format: 'float32x2', offset: 2 * 4, shaderLocation: 1 }, // particle velocity
           ],
         },
       ],
     },
+    primitive: { topology: 'triangle-list' },
+    depthStencil: { format: DEPTH_FORMAT },
+    multisample: { count: 4 },
     fragment: {
       module: renderShaderModule,
-      entryPoint: 'renderBoids_frag',
-      targets: [
+      entryPoint: 'renderBoids_frag', // Which entry point to use as fragment shader
+      targets: [ // <---- list of render attachments
         { format: SWAP_CHAIN_FORMAT },
       ],
-    },
-    multisample: {
-      count: 4,
-    },
-    depthStencil: {
-      format: DEPTH_FORMAT,
-    },
-    primitive: {
-      topology: 'triangle-list',
     },
   });
 
@@ -256,12 +241,13 @@ document.body.appendChild(stats.dom);
 
   // Create uniform buffer for simulation parameters
   const simParamBufferSize = 7 * Float32Array.BYTES_PER_ELEMENT;
-  const simParamBuffer = device.createBuffer({
-    mappedAtCreation: true,
+  const simParamBuffer: GPUBuffer = device.createBuffer({
+    mappedAtCreation: true, // Start the buffer in the "mapped" state, for initialization
     size: simParamBufferSize,
     usage: GPUBufferUsage.UNIFORM,
   });
-  new Float32Array(simParamBuffer.getMappedRange()).set([
+  const mappedRange: ArrayBuffer = simParamBuffer.getMappedRange();
+  new Float32Array(mappedRange).set([
     0.04,  // deltaT
     0.1,   // rule1Distance
     0.025, // rule2Distance
@@ -270,7 +256,7 @@ document.body.appendChild(stats.dom);
     0.05,  // rule2Scale
     0.005, // rule3Scale
   ]);
-  simParamBuffer.unmap();
+  simParamBuffer.unmap(); // Unmap it (detaches the ArrayBuffer)
 
   // Initialize particle buffers with random data
   const initialParticleData = new Float32Array(NUM_BOIDS * 4);
@@ -282,7 +268,6 @@ document.body.appendChild(stats.dom);
   }
 
   const particleBuffers: GPUBuffer[] = new Array(2);
-  const particleBindGroups: GPUBindGroup[] = new Array(2);
   for (let i = 0; i < 2; ++i) {
     particleBuffers[i] = device.createBuffer({
       size: initialParticleData.byteLength,
@@ -300,31 +285,15 @@ document.body.appendChild(stats.dom);
 
   // Create two bind groups, one for stepping from particleBuffers[0]
   // to [1] and one for stepping from [1] to [0] (ping-pong).
+  const particleBindGroups: GPUBindGroup[] = new Array(2);
   for (let i = 0; i < 2; ++i) {
     particleBindGroups[i] = device.createBindGroup({
       layout: bindGroupLayout,
       entries: [
+        { binding: 0, resource: { buffer: simParamBuffer } },
+        { binding: 1, resource: { buffer: particleBuffers[i] } },
         {
-          binding: 0,
-          resource: {
-            buffer: simParamBuffer,
-          },
-        },
-        {
-          binding: 1,
-          resource: {
-            buffer: particleBuffers[i],
-            offset: 0,
-            size: initialParticleData.byteLength,
-          },
-        },
-        {
-          binding: 2,
-          resource: {
-            buffer: particleBuffers[(i + 1) % 2],
-            offset: 0,
-            size: initialParticleData.byteLength,
-          },
+          binding: 2, resource: { buffer: particleBuffers[(i + 1) % 2] },
         },
       ],
     });
@@ -334,43 +303,43 @@ document.body.appendChild(stats.dom);
   // Render pass setup
   // **************************************************************************
 
-  // Create a multisampled color texture as "scratch space" for the render pass colors
-  const multisampleColorTexture = device.createTexture({
+  // Create a multisampled color texture for rendering.
+  // This just a "scratch space": only the multisample-resolve result will be kept.
+  const multisampleColorTexture: GPUTexture = device.createTexture({
     size: [WIDTH, HEIGHT],
     format: SWAP_CHAIN_FORMAT,
     usage: GPUTextureUsage.RENDER_ATTACHMENT,
     sampleCount: 4,
   });
-  const multisampleColorTextureView = multisampleColorTexture.createView();
+  const multisampleColorTextureView: GPUTextureView = multisampleColorTexture.createView();
 
-  // Create a multisampled depth texture as "scratch space" for the render pass depth values
-  const depthTexture = device.createTexture({
+  // Create a multisampled depth texture for rendering.
+  // This is also a "scratch space", for depth testing inside the render pass.
+  const depthTexture: GPUTexture = device.createTexture({
     size: [WIDTH, HEIGHT],
     format: DEPTH_FORMAT,
     usage: GPUTextureUsage.RENDER_ATTACHMENT,
     sampleCount: 4,
   });
-  const depthTextureView = depthTexture.createView();
+  const depthTextureView: GPUTextureView = depthTexture.createView();
 
   const renderPassDescriptor = {
     colorAttachments: [{
-      // Use multisampleColorTextureView as "scratch space" for multisampled rendering
       view: multisampleColorTextureView,
-      // Load a constant color (dark blue) at the beginning of the render pass
+      // Load a constant color (dark blue) at the beginning of the render pass.
       loadValue: [0.1, 0.0, 0.3, 1.0],
-      // Resolve multisampled rendering into the canvas texture (to be set later)
+      // Resolve multisampled rendering into the canvas texture (to be set later).
       resolveTarget: null! as GPUTextureView,
-      // Multisampled rendering results can be discarded after resolve
+      // Multisampled rendering results can be discarded after resolve.
       storeOp: 'clear' as const,
     }],
     depthStencilAttachment: {
-      // Use depthTextureView as "scratch space"
       view: depthTextureView,
-      // Load a constant value (1) at the beginning of the render pass
+      // Load a constant value (1) at the beginning of the render pass.
       depthLoadValue: 1,
-      // Depth-testing buffer can be discarded after pass
+      // Depth-testing buffer can be discarded after the render pass.
       depthStoreOp: 'clear' as const,
-      // (Not used but required)
+      // (Not used, but required.)
       stencilLoadValue: 0,
       stencilStoreOp: 'clear' as const,
     }
@@ -383,19 +352,21 @@ document.body.appendChild(stats.dom);
   let frameNum = 0;
 
   function stepBoidsSimulation(commandEncoder: GPUCommandEncoder) {
-    const passEncoder = commandEncoder.beginComputePass();
+    const passEncoder: GPUComputePassEncoder = commandEncoder.beginComputePass();
     passEncoder.setPipeline(stepBoidsSimulation_pipeline);
-    // Simulate either from particleBuffers[0] -> particleBuffers[1] or vice versa
+    // Simulate either from particleBuffers[0] -> particleBuffers[1] or vice versa.
     passEncoder.setBindGroup(0, particleBindGroups[frameNum % 2]);
     passEncoder.dispatch(Math.ceil(NUM_BOIDS / 64));
     passEncoder.endPass();
   }
 
   function renderBoids(commandEncoder: GPUCommandEncoder) {
+    // We get a new GPUTexture from the swap chain every frame.
     renderPassDescriptor.colorAttachments[0].resolveTarget = swapChain.getCurrentTexture().createView();
-    const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+
+    const passEncoder: GPURenderPassEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
     passEncoder.setPipeline(renderBoids_pipeline);
-    // Render from the particleBuffers[x] that was just updated
+    // Render from the particleBuffers[x] that was just updated.
     passEncoder.setVertexBuffer(0, particleBuffers[(frameNum + 1) % 2]);
     passEncoder.draw(6, NUM_BOIDS);
     passEncoder.endPass();
@@ -404,12 +375,12 @@ document.body.appendChild(stats.dom);
   function frame() {
     stats.begin();
 
-    const commandEncoder = device.createCommandEncoder();
+    const commandEncoder: GPUCommandEncoder = device.createCommandEncoder();
     {
       stepBoidsSimulation(commandEncoder);
       renderBoids(commandEncoder);
     }
-    const commandBuffer = commandEncoder.finish();
+    const commandBuffer: GPUCommandBuffer = commandEncoder.finish();
     device.queue.submit([commandBuffer]);
     frameNum++;
 

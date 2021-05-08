@@ -116,16 +116,11 @@ document.body.appendChild(stats.dom);
         // Write back
         particlesB.particles[index].pos = vPos;
         particlesB.particles[index].vel = vVel;
-      }
-      `,
+      }`,
     });
+    // Shader module can define multiple entry points (here, vertex and fragment).
     const renderShaderModule = device.createShaderModule({
         code: `
-
-      // **********************************************************************
-      // Rendering
-      // **********************************************************************
-
       let boid_positions: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
           vec2<f32>(-0.01, -0.02), vec2<f32>( 0.00, -0.02), vec2<f32>( 0.00,  0.02),
           vec2<f32>( 0.00, -0.02), vec2<f32>( 0.01, -0.02), vec2<f32>( 0.00,  0.02),
@@ -156,7 +151,6 @@ document.body.appendChild(stats.dom);
             vec2<f32>(cos(angle), sin(angle)),
             vec2<f32>(-sin(angle), cos(angle)));
 
-        // TODO: change rotation into a matrix
         let rel_pos: vec2<f32> = rotation * boid_vtxpos;
         let rel_nor: vec3<f32> = vec3<f32>(rotation * boid_normal.xy, boid_normal.z);
 
@@ -195,7 +189,7 @@ document.body.appendChild(stats.dom);
     const stepBoidsSimulation_pipeline = device.createComputePipeline({
         compute: {
             module: computeShaderModule,
-            entryPoint: 'stepBoidsSimulation'
+            entryPoint: 'stepBoidsSimulation', // Which entry point to use as compute shader
         }
     });
     // **************************************************************************
@@ -207,33 +201,24 @@ document.body.appendChild(stats.dom);
             entryPoint: 'renderBoids_vert',
             buffers: [
                 {
-                    // instanced particles buffer
                     arrayStride: 4 * 4,
                     stepMode: 'instance',
                     attributes: [
-                        // instance position
-                        { shaderLocation: 0, offset: 0, format: 'float32x2' },
-                        // instance velocity
-                        { shaderLocation: 1, offset: 2 * 4, format: 'float32x2' },
+                        { format: 'float32x2', offset: 0, shaderLocation: 0 },
+                        { format: 'float32x2', offset: 2 * 4, shaderLocation: 1 }, // particle velocity
                     ],
                 },
             ],
         },
+        primitive: { topology: 'triangle-list' },
+        depthStencil: { format: DEPTH_FORMAT },
+        multisample: { count: 4 },
         fragment: {
             module: renderShaderModule,
             entryPoint: 'renderBoids_frag',
             targets: [
                 { format: SWAP_CHAIN_FORMAT },
             ],
-        },
-        multisample: {
-            count: 4,
-        },
-        depthStencil: {
-            format: DEPTH_FORMAT,
-        },
-        primitive: {
-            topology: 'triangle-list',
         },
     });
     // **************************************************************************
@@ -246,7 +231,8 @@ document.body.appendChild(stats.dom);
         size: simParamBufferSize,
         usage: GPUBufferUsage.UNIFORM,
     });
-    new Float32Array(simParamBuffer.getMappedRange()).set([
+    const mappedRange = simParamBuffer.getMappedRange();
+    new Float32Array(mappedRange).set([
         0.04,
         0.1,
         0.025,
@@ -255,7 +241,7 @@ document.body.appendChild(stats.dom);
         0.05,
         0.005, // rule3Scale
     ]);
-    simParamBuffer.unmap();
+    simParamBuffer.unmap(); // Unmap it (detaches the ArrayBuffer)
     // Initialize particle buffers with random data
     const initialParticleData = new Float32Array(NUM_BOIDS * 4);
     for (let i = 0; i < NUM_BOIDS; ++i) {
@@ -265,7 +251,6 @@ document.body.appendChild(stats.dom);
         initialParticleData[4 * i + 3] = 2 * (Math.random() - 0.5) * 0.1;
     }
     const particleBuffers = new Array(2);
-    const particleBindGroups = new Array(2);
     for (let i = 0; i < 2; ++i) {
         particleBuffers[i] = device.createBuffer({
             size: initialParticleData.byteLength,
@@ -279,31 +264,15 @@ document.body.appendChild(stats.dom);
     const bindGroupLayout = stepBoidsSimulation_pipeline.getBindGroupLayout(0);
     // Create two bind groups, one for stepping from particleBuffers[0]
     // to [1] and one for stepping from [1] to [0] (ping-pong).
+    const particleBindGroups = new Array(2);
     for (let i = 0; i < 2; ++i) {
         particleBindGroups[i] = device.createBindGroup({
             layout: bindGroupLayout,
             entries: [
+                { binding: 0, resource: { buffer: simParamBuffer } },
+                { binding: 1, resource: { buffer: particleBuffers[i] } },
                 {
-                    binding: 0,
-                    resource: {
-                        buffer: simParamBuffer,
-                    },
-                },
-                {
-                    binding: 1,
-                    resource: {
-                        buffer: particleBuffers[i],
-                        offset: 0,
-                        size: initialParticleData.byteLength,
-                    },
-                },
-                {
-                    binding: 2,
-                    resource: {
-                        buffer: particleBuffers[(i + 1) % 2],
-                        offset: 0,
-                        size: initialParticleData.byteLength,
-                    },
+                    binding: 2, resource: { buffer: particleBuffers[(i + 1) % 2] },
                 },
             ],
         });
@@ -311,7 +280,8 @@ document.body.appendChild(stats.dom);
     // **************************************************************************
     // Render pass setup
     // **************************************************************************
-    // Create a multisampled color texture as "scratch space" for the render pass colors
+    // Create a multisampled color texture for rendering.
+    // This just a "scratch space": only the multisample-resolve result will be kept.
     const multisampleColorTexture = device.createTexture({
         size: [WIDTH, HEIGHT],
         format: SWAP_CHAIN_FORMAT,
@@ -319,7 +289,8 @@ document.body.appendChild(stats.dom);
         sampleCount: 4,
     });
     const multisampleColorTextureView = multisampleColorTexture.createView();
-    // Create a multisampled depth texture as "scratch space" for the render pass depth values
+    // Create a multisampled depth texture for rendering.
+    // This is also a "scratch space", for depth testing inside the render pass.
     const depthTexture = device.createTexture({
         size: [WIDTH, HEIGHT],
         format: DEPTH_FORMAT,
@@ -329,23 +300,21 @@ document.body.appendChild(stats.dom);
     const depthTextureView = depthTexture.createView();
     const renderPassDescriptor = {
         colorAttachments: [{
-                // Use multisampleColorTextureView as "scratch space" for multisampled rendering
                 view: multisampleColorTextureView,
-                // Load a constant color (dark blue) at the beginning of the render pass
+                // Load a constant color (dark blue) at the beginning of the render pass.
                 loadValue: [0.1, 0.0, 0.3, 1.0],
-                // Resolve multisampled rendering into the canvas texture (to be set later)
+                // Resolve multisampled rendering into the canvas texture (to be set later).
                 resolveTarget: null,
-                // Multisampled rendering results can be discarded after resolve
+                // Multisampled rendering results can be discarded after resolve.
                 storeOp: 'clear',
             }],
         depthStencilAttachment: {
-            // Use depthTextureView as "scratch space"
             view: depthTextureView,
-            // Load a constant value (1) at the beginning of the render pass
+            // Load a constant value (1) at the beginning of the render pass.
             depthLoadValue: 1,
-            // Depth-testing buffer can be discarded after pass
+            // Depth-testing buffer can be discarded after the render pass.
             depthStoreOp: 'clear',
-            // (Not used but required)
+            // (Not used, but required.)
             stencilLoadValue: 0,
             stencilStoreOp: 'clear',
         }
@@ -357,16 +326,17 @@ document.body.appendChild(stats.dom);
     function stepBoidsSimulation(commandEncoder) {
         const passEncoder = commandEncoder.beginComputePass();
         passEncoder.setPipeline(stepBoidsSimulation_pipeline);
-        // Simulate either from particleBuffers[0] -> particleBuffers[1] or vice versa
+        // Simulate either from particleBuffers[0] -> particleBuffers[1] or vice versa.
         passEncoder.setBindGroup(0, particleBindGroups[frameNum % 2]);
         passEncoder.dispatch(Math.ceil(NUM_BOIDS / 64));
         passEncoder.endPass();
     }
     function renderBoids(commandEncoder) {
+        // We get a new GPUTexture from the swap chain every frame.
         renderPassDescriptor.colorAttachments[0].resolveTarget = swapChain.getCurrentTexture().createView();
         const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
         passEncoder.setPipeline(renderBoids_pipeline);
-        // Render from the particleBuffers[x] that was just updated
+        // Render from the particleBuffers[x] that was just updated.
         passEncoder.setVertexBuffer(0, particleBuffers[(frameNum + 1) % 2]);
         passEncoder.draw(6, NUM_BOIDS);
         passEncoder.endPass();

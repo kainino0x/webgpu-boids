@@ -251,11 +251,12 @@ document.body.appendChild(stats.dom);
   // Resources setup
   // **************************************************************************
 
+  // Create uniform buffer for simulation parameters
   const simParamBufferSize = 7 * Float32Array.BYTES_PER_ELEMENT;
   const simParamBuffer = gpu.createBuffer({
     mappedAtCreation: true,
     size: simParamBufferSize,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    usage: GPUBufferUsage.UNIFORM,
   });
   new Float32Array(simParamBuffer.getMappedRange()).set([
     0.04,  // deltaT
@@ -268,6 +269,7 @@ document.body.appendChild(stats.dom);
   ]);
   simParamBuffer.unmap();
 
+  // Initialize particle buffers with random data
   const initialParticleData = new Float32Array(NUM_BOIDS * 4);
   for (let i = 0; i < NUM_BOIDS; ++i) {
     initialParticleData[4 * i + 0] = 2 * (Math.random() - 0.5);
@@ -290,9 +292,14 @@ document.body.appendChild(stats.dom);
     particleBuffers[i].unmap();
   }
 
+  // Get bind group layout automatically generated from shader
+  const bindGroupLayout = stepBoidsSimulation_pipeline.getBindGroupLayout(0);
+
+  // Create two bind groups, one for stepping from particleBuffers[0]
+  // to [1] and one for stepping from [1] to [0] (ping-pong).
   for (let i = 0; i < 2; ++i) {
     particleBindGroups[i] = gpu.createBindGroup({
-      layout: stepBoidsSimulation_pipeline.getBindGroupLayout(0),
+      layout: bindGroupLayout,
       entries: [
         {
           binding: 0,

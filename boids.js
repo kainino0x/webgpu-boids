@@ -14,20 +14,23 @@ document.body.appendChild(stats.dom);
     // **************************************************************************
     // Device and canvas initialization
     // **************************************************************************
+    // Device is initialized without a canvas. Can be used with zero or more canvases.
     assert('gpu' in navigator, 'WebGPU not supported');
     const adapter = await navigator.gpu.requestAdapter();
     assert(adapter !== null, 'requestAdapter failed');
-    const gpu = await adapter.requestDevice();
+    const device = await adapter.requestDevice();
+    // Canvas context is initialized without a device
     const cvs = document.getElementById('cvs');
     cvs.width = WIDTH;
     cvs.height = HEIGHT;
     const ctx = cvs.getContext('gpupresent');
     assert(ctx !== null, 'Unable to create gpupresent context');
-    const swapChain = ctx.configureSwapChain({ device: gpu, format: SWAP_CHAIN_FORMAT });
+    // Pair them to create a "swap chain" to vend render target textures
+    const swapChain = ctx.configureSwapChain({ device, format: SWAP_CHAIN_FORMAT });
     // **************************************************************************
     // Shaders
     // **************************************************************************
-    const computeShaderModule = gpu.createShaderModule({
+    const computeShaderModule = device.createShaderModule({
         code: `
       struct Particle {
         pos: vec2<f32>;
@@ -116,7 +119,7 @@ document.body.appendChild(stats.dom);
       }
       `,
     });
-    const renderShaderModule = gpu.createShaderModule({
+    const renderShaderModule = device.createShaderModule({
         code: `
 
       // **********************************************************************
@@ -189,7 +192,7 @@ document.body.appendChild(stats.dom);
     // **************************************************************************
     // Compute pipeline setup
     // **************************************************************************
-    const stepBoidsSimulation_pipeline = gpu.createComputePipeline({
+    const stepBoidsSimulation_pipeline = device.createComputePipeline({
         compute: {
             module: computeShaderModule,
             entryPoint: 'stepBoidsSimulation'
@@ -198,7 +201,7 @@ document.body.appendChild(stats.dom);
     // **************************************************************************
     // Render pipeline setup
     // **************************************************************************
-    const renderBoids_pipeline = gpu.createRenderPipeline({
+    const renderBoids_pipeline = device.createRenderPipeline({
         vertex: {
             module: renderShaderModule,
             entryPoint: 'renderBoids_vert',
@@ -238,7 +241,7 @@ document.body.appendChild(stats.dom);
     // **************************************************************************
     // Create uniform buffer for simulation parameters
     const simParamBufferSize = 7 * Float32Array.BYTES_PER_ELEMENT;
-    const simParamBuffer = gpu.createBuffer({
+    const simParamBuffer = device.createBuffer({
         mappedAtCreation: true,
         size: simParamBufferSize,
         usage: GPUBufferUsage.UNIFORM,
@@ -264,7 +267,7 @@ document.body.appendChild(stats.dom);
     const particleBuffers = new Array(2);
     const particleBindGroups = new Array(2);
     for (let i = 0; i < 2; ++i) {
-        particleBuffers[i] = gpu.createBuffer({
+        particleBuffers[i] = device.createBuffer({
             size: initialParticleData.byteLength,
             usage: GPUBufferUsage.VERTEX | GPUBufferUsage.STORAGE,
             mappedAtCreation: true,
@@ -277,7 +280,7 @@ document.body.appendChild(stats.dom);
     // Create two bind groups, one for stepping from particleBuffers[0]
     // to [1] and one for stepping from [1] to [0] (ping-pong).
     for (let i = 0; i < 2; ++i) {
-        particleBindGroups[i] = gpu.createBindGroup({
+        particleBindGroups[i] = device.createBindGroup({
             layout: bindGroupLayout,
             entries: [
                 {
@@ -309,7 +312,7 @@ document.body.appendChild(stats.dom);
     // Render pass setup
     // **************************************************************************
     // Create a multisampled color texture as "scratch space" for the render pass colors
-    const multisampleColorTexture = gpu.createTexture({
+    const multisampleColorTexture = device.createTexture({
         size: [WIDTH, HEIGHT],
         format: SWAP_CHAIN_FORMAT,
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
@@ -317,7 +320,7 @@ document.body.appendChild(stats.dom);
     });
     const multisampleColorTextureView = multisampleColorTexture.createView();
     // Create a multisampled depth texture as "scratch space" for the render pass depth values
-    const depthTexture = gpu.createTexture({
+    const depthTexture = device.createTexture({
         size: [WIDTH, HEIGHT],
         format: DEPTH_FORMAT,
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
@@ -370,13 +373,13 @@ document.body.appendChild(stats.dom);
     }
     function frame() {
         stats.begin();
-        const commandEncoder = gpu.createCommandEncoder();
+        const commandEncoder = device.createCommandEncoder();
         {
             stepBoidsSimulation(commandEncoder);
             renderBoids(commandEncoder);
         }
         const commandBuffer = commandEncoder.finish();
-        gpu.queue.submit([commandBuffer]);
+        device.queue.submit([commandBuffer]);
         frameNum++;
         stats.end();
         requestAnimationFrame(frame);

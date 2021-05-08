@@ -1,9 +1,14 @@
 // `boids.js` is generated from `boids.ts`. Run `npm run build` to build it.
 
+// Add stats.js
+var stats = new Stats();
+stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
+document.body.appendChild(stats.dom);
+
 // Based on http://austin-eng.com/webgpu-samples/samples/computeBoids
 (async () => {
-  const WIDTH = 600;
-  const HEIGHT = 600;
+  const WIDTH = 800;
+  const HEIGHT = 800;
   const SWAP_CHAIN_FORMAT = 'bgra8unorm';
   const DEPTH_FORMAT = 'depth24plus';
 
@@ -349,6 +354,8 @@
   }
 
   function frame() {
+    stats.begin();
+
     const commandEncoder = gpu.createCommandEncoder();
     {
       stepBoidsSimulation(commandEncoder);
@@ -358,6 +365,7 @@
     gpu.queue.submit([commandBuffer]);
     frameNum++;
 
+    stats.end();
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

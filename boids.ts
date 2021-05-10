@@ -131,17 +131,24 @@ document.body.appendChild(stats.dom);
         particlesB.particles[index].vel = vVel;
       }`,
   });
+  if ('compilationInfo' in computeShaderModule) {
+    computeShaderModule.compilationInfo().then(info => {
+      if (info.messages.length) {
+        console.log(info.messages);
+      }
+    });
+  }
 
   // Shader module can define multiple entry points (here, vertex and fragment).
   const renderShaderModule: GPUShaderModule = device.createShaderModule({
     code: `
       let boid_positions: array<vec3<f32>, 6> = array<vec3<f32>, 6>(
           vec3<f32>(-0.04, -0.05, 0.50), vec3<f32>( 0.00, -0.04, 0.47), vec3<f32>( 0.00,  0.04, 0.50),
-          vec3<f32>( 0.00, -0.04, 0.47), vec3<f32>( 0.04, -0.05, 0.50), vec3<f32>( 0.00,  0.04, 0.50),
+          vec3<f32>( 0.00, -0.04, 0.47), vec3<f32>( 0.04, -0.05, 0.50), vec3<f32>( 0.00,  0.04, 0.50)
         );
       let boid_normals: array<vec3<f32>, 2> = array<vec3<f32>, 2>(
           vec3<f32>(-0.6, 0.2, -1.0),
-          vec3<f32>( 0.6, 0.2, -1.0),
+          vec3<f32>( 0.6, 0.2, -1.0)
         );
 
       struct Varying {
@@ -199,6 +206,13 @@ document.body.appendChild(stats.dom);
         return color;
       }`,
   });
+  if ('compilationInfo' in renderShaderModule) {
+    renderShaderModule.compilationInfo().then(info => {
+      if (info.messages.length) {
+        console.log(info.messages);
+      }
+    });
+  }
 
   // **************************************************************************
   // Compute pipeline setup

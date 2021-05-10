@@ -19,6 +19,9 @@ document.body.appendChild(stats.dom);
     const adapter = await navigator.gpu.requestAdapter();
     assert(adapter !== null, 'requestAdapter failed');
     const device = await adapter.requestDevice();
+    device.onuncapturederror = ev => {
+        console.warn(ev.error);
+    };
     // Canvas context is initialized without a device
     const cvs = document.getElementById('cvs');
     cvs.width = WIDTH;
@@ -68,7 +71,7 @@ document.body.appendChild(stats.dom);
         var pos: vec2<f32>;
         var vel: vec2<f32>;
 
-        for (var i: u32 = 0u; i < arrayLength(particlesA.particles); i = i + 1u) {
+        for (var i: u32 = 0u; i < ${NUM_BOIDS}u; i = i + 1u) {
           if (i == index) {
             continue;
           }

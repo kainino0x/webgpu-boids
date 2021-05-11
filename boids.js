@@ -218,8 +218,6 @@ document.body.appendChild(stats.dom);
     // **************************************************************************
     const renderBoids_pipeline = device.createRenderPipeline({
         vertex: {
-            module: renderShaderModule,
-            entryPoint: 'renderBoids_vert',
             buffers: [
                 {
                     arrayStride: 4 * 4,
@@ -230,6 +228,8 @@ document.body.appendChild(stats.dom);
                     ],
                 },
             ],
+            module: renderShaderModule,
+            entryPoint: 'renderBoids_vert', // Which entry point to use as vertex shader
         },
         primitive: { topology: 'triangle-list' },
         depthStencil: {

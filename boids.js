@@ -6,8 +6,8 @@ stats.showPanel(0); // 0: fps, 1: ms, 2: mb, 3+: custom
 document.body.appendChild(stats.dom);
 // Based on http://austin-eng.com/webgpu-samples/samples/computeBoids
 (async () => {
-    const WIDTH = 800;
-    const HEIGHT = 800;
+    const WIDTH = Math.floor(500 * window.devicePixelRatio);
+    const HEIGHT = WIDTH;
     const SWAP_CHAIN_FORMAT = 'bgra8unorm';
     const DEPTH_FORMAT = 'depth24plus';
     const NUM_BOIDS = 500;
@@ -26,8 +26,8 @@ document.body.appendChild(stats.dom);
     const cvs = document.getElementById('cvs');
     cvs.width = WIDTH;
     cvs.height = HEIGHT;
-    cvs.style.width = (WIDTH / window.devicePixelRatio) + 'px';
-    cvs.style.width = (WIDTH / window.devicePixelRatio) + 'px';
+    cvs.style.width = '500px';
+    cvs.style.height = '500px';
     const ctx = cvs.getContext('gpupresent');
     assert(ctx !== null, 'Unable to create gpupresent context');
     // Pair them to create a "swap chain" to vend render target textures
@@ -235,7 +235,7 @@ document.body.appendChild(stats.dom);
         depthStencil: {
             format: DEPTH_FORMAT,
             depthWriteEnabled: true,
-            depthCompare: 'less',
+            depthCompare: 'less', // configure depth test
         },
         fragment: {
             module: renderShaderModule,

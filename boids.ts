@@ -7,8 +7,8 @@ document.body.appendChild(stats.dom);
 
 // Based on http://austin-eng.com/webgpu-samples/samples/computeBoids
 (async () => {
-  const WIDTH = 800;
-  const HEIGHT = 800;
+  const WIDTH = Math.floor(500 * window.devicePixelRatio);
+  const HEIGHT = WIDTH;
   const SWAP_CHAIN_FORMAT = 'bgra8unorm';
   const DEPTH_FORMAT = 'depth24plus';
 
@@ -31,8 +31,8 @@ document.body.appendChild(stats.dom);
   const cvs = document.getElementById('cvs') as HTMLCanvasElement;
   cvs.width = WIDTH;
   cvs.height = HEIGHT;
-  cvs.style.width = (WIDTH / window.devicePixelRatio) + 'px';
-  cvs.style.width = (WIDTH / window.devicePixelRatio) + 'px';
+  cvs.style.width = '500px';
+  cvs.style.height = '500px';
   const ctx: GPUCanvasContext | null = cvs.getContext('gpupresent');
   assert(ctx !== null, 'Unable to create gpupresent context');
 
@@ -248,7 +248,7 @@ document.body.appendChild(stats.dom);
     depthStencil: {
       format: DEPTH_FORMAT,
       depthWriteEnabled: true,
-      depthCompare: 'less',
+      depthCompare: 'less', // configure depth test
     },
     fragment: {
       module: renderShaderModule,

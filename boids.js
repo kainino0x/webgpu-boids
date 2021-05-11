@@ -237,6 +237,7 @@ document.body.appendChild(stats.dom);
             depthWriteEnabled: true,
             depthCompare: 'less', // configure depth test
         },
+        multisample: { count: 4 },
         fragment: {
             module: renderShaderModule,
             entryPoint: 'renderBoids_frag',
@@ -304,20 +305,33 @@ document.body.appendChild(stats.dom);
     // **************************************************************************
     // Render pass setup
     // **************************************************************************
-    // Create a depth texture "scratch space", for depth testing inside the render pass.
+    // Create a multisampled color texture for rendering.
+    // This just a "scratch space": only the multisample-resolve result will be kept.
+    const multisampleColorTexture = device.createTexture({
+        size: [WIDTH, HEIGHT],
+        format: SWAP_CHAIN_FORMAT,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        sampleCount: 4,
+    });
+    const multisampleColorTextureView = multisampleColorTexture.createView();
+    // Create a multisampled depth texture for rendering.
+    // This is also a "scratch space", for depth testing inside the render pass.
     const depthTexture = device.createTexture({
         size: [WIDTH, HEIGHT],
         format: DEPTH_FORMAT,
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
+        sampleCount: 4,
     });
     const depthTextureView = depthTexture.createView();
     const renderPassDescriptor = {
         colorAttachments: [{
-                view: null,
-                // Load a constant color (dark purple) at the beginning of the render pass.
+                view: multisampleColorTextureView,
+                // Load a constant color (dark blue) at the beginning of the render pass.
                 loadValue: [0.1, 0.0, 0.3, 1.0],
-                // Store results at the end of the render pass.
-                storeOp: 'store',
+                // Resolve multisampled rendering into the canvas texture (to be set later).
+                resolveTarget: null,
+                // Multisampled rendering results can be discarded after resolve.
+                storeOp: 'clear',
             }],
         depthStencilAttachment: {
             view: depthTextureView,
@@ -325,7 +339,7 @@ document.body.appendChild(stats.dom);
             depthLoadValue: 1,
             // Depth-testing buffer can be discarded after the render pass.
             depthStoreOp: 'clear',
-            // (Stencil not used, but these settings are required.)
+            // (Not used, but required.)
             stencilLoadValue: 0,
             stencilStoreOp: 'clear',
         }
@@ -348,7 +362,7 @@ document.body.appendChild(stats.dom);
     }
     function renderBoids(commandEncoder) {
         // We get a new GPUTexture from the swap chain every frame.
-        renderPassDescriptor.colorAttachments[0].view = swapChain.getCurrentTexture().createView();
+        renderPassDescriptor.colorAttachments[0].resolveTarget = swapChain.getCurrentTexture().createView();
         const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
         passEncoder.setPipeline(renderBoids_pipeline);
         // Render from the particleBuffers[x] that was just updated.

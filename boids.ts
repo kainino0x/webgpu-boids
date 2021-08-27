@@ -27,17 +27,18 @@ document.body.appendChild(stats.dom);
     console.warn(ev.error);
   };
 
-  // Canvas context is initialized without a device
-  const cvs = document.getElementById('cvs') as HTMLCanvasElement;
-  cvs.width = WIDTH;
-  cvs.height = HEIGHT;
-  cvs.style.width = '500px';
-  cvs.style.height = '500px';
-  const ctx: GPUCanvasContext | null = cvs.getContext('gpupresent');
-  assert(ctx !== null, 'Unable to create gpupresent context');
+  // Canvas context is initialized without a device.
+  const canvas = document.getElementById('cvs') as HTMLCanvasElement;
+  canvas.width = WIDTH;
+  canvas.height = HEIGHT;
+  canvas.style.width = '500px';
+  canvas.style.height = '500px';
+  const ctx: GPUCanvasContext | null = canvas.getContext('webgpu');
+  assert(ctx !== null, "Unable to create 'webgpu' canvas context");
+  const canvasContext: GPUCanvasContext = ctx;
 
-  // Pair them to create a "swap chain" to vend render target textures
-  const swapChain: GPUSwapChain = ctx.configureSwapChain({ device, format: SWAP_CHAIN_FORMAT });
+  // Configure the canvas context to associate it with a device and set its format.
+  canvasContext.configure({ device, format: SWAP_CHAIN_FORMAT });
 
   // **************************************************************************
   // Shaders
@@ -62,8 +63,8 @@ document.body.appendChild(stats.dom);
         particles: [[stride(16)]] array<Particle>;
       };
       [[binding(0), group(0)]] var<uniform> params: SimParams;
-      [[binding(1), group(0)]] var<storage> particlesA: [[access(read)]] Particles;
-      [[binding(2), group(0)]] var<storage> particlesB: [[access(read_write)]] Particles;
+      [[binding(1), group(0)]] var<storage, read> particlesA: Particles;
+      [[binding(2), group(0)]] var<storage, read_write> particlesB: Particles;
 
       [[stage(compute), workgroup_size(64)]]
       fn stepBoidsSimulation([[builtin(global_invocation_id)]] GlobalInvocationID: vec3<u32>) {
@@ -142,11 +143,11 @@ document.body.appendChild(stats.dom);
   // Shader module can define multiple entry points (here, vertex and fragment).
   const renderShaderModule: GPUShaderModule = device.createShaderModule({
     code: `
-      let boid_positions: array<vec3<f32>, 6> = array<vec3<f32>, 6>(
+      var<private> boid_positions: array<vec3<f32>, 6> = array<vec3<f32>, 6>(
           vec3<f32>(-0.04, -0.05, 0.50), vec3<f32>( 0.00, -0.04, 0.47), vec3<f32>( 0.00,  0.04, 0.50),
           vec3<f32>( 0.00, -0.04, 0.47), vec3<f32>( 0.04, -0.05, 0.50), vec3<f32>( 0.00,  0.04, 0.50)
         );
-      let boid_normals: array<vec3<f32>, 2> = array<vec3<f32>, 2>(
+      var<private> boid_normals: array<vec3<f32>, 2> = array<vec3<f32>, 2>(
           vec3<f32>(-0.6, 0.2, -1.0),
           vec3<f32>( 0.6, 0.2, -1.0)
         );
@@ -160,15 +161,15 @@ document.body.appendChild(stats.dom);
 
       [[stage(vertex)]]
       fn renderBoids_vert(
-          [[builtin(vertex_index)]] VertexIndex: u32,
-          [[builtin(instance_index)]] InstanceIndex: u32,
+          [[builtin(vertex_index)]] vertexIndex: u32,
+          [[builtin(instance_index)]] instanceIndex: u32,
           [[location(0)]] a_particlePos: vec2<f32>,
           [[location(1)]] a_particleVel: vec2<f32>
         ) -> Varying {
         let angle: f32 = -atan2(a_particleVel.x, a_particleVel.y);
 
-        let boid_vtxpos: vec3<f32> = boid_positions[VertexIndex];
-        let boid_normal: vec3<f32> = boid_normals[VertexIndex / 3u];
+        let boid_vtxpos: vec3<f32> = boid_positions[vertexIndex];
+        let boid_normal: vec3<f32> = boid_normals[vertexIndex / 3u];
 
         let rotation: mat3x3<f32> = mat3x3<f32>(
             vec3<f32>(cos(angle), sin(angle), 0.0),
@@ -179,7 +180,7 @@ document.body.appendChild(stats.dom);
         varying.vtxpos = rotation * boid_vtxpos + vec3<f32>(a_particlePos, 0.0);
         varying.pos = vec4<f32>(varying.vtxpos, 1.0);
         varying.normal = rotation * boid_normal;
-        varying.index = InstanceIndex;
+        varying.index = instanceIndex;
         return varying;
       }
 
@@ -356,17 +357,17 @@ document.body.appendChild(stats.dom);
       // Resolve multisampled rendering into the canvas texture (to be set later).
       resolveTarget: null! as GPUTextureView,
       // Multisampled rendering results can be discarded after resolve.
-      storeOp: 'clear' as const,
+      storeOp: 'discard' as const,
     }],
     depthStencilAttachment: {
       view: depthTextureView,
       // Load a constant value (1) at the beginning of the render pass.
       depthLoadValue: 1,
       // Depth-testing buffer can be discarded after the render pass.
-      depthStoreOp: 'clear' as const,
+      depthStoreOp: 'discard' as const,
       // (Not used, but required.)
       stencilLoadValue: 0,
-      stencilStoreOp: 'clear' as const,
+      stencilStoreOp: 'discard' as const,
     }
   };
 
@@ -377,7 +378,7 @@ document.body.appendChild(stats.dom);
   let frameNum = 0;
 
   let paused = false;
-  cvs.addEventListener('click', () => {
+  canvas.addEventListener('click', () => {
     paused = !paused;
   });
 
@@ -392,7 +393,7 @@ document.body.appendChild(stats.dom);
 
   function renderBoids(commandEncoder: GPUCommandEncoder) {
     // We get a new GPUTexture from the swap chain every frame.
-    renderPassDescriptor.colorAttachments[0].resolveTarget = swapChain.getCurrentTexture().createView();
+    renderPassDescriptor.colorAttachments[0].resolveTarget = canvasContext.getCurrentTexture().createView();
 
     const passEncoder: GPURenderPassEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
     passEncoder.setPipeline(renderBoids_pipeline);

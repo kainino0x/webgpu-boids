@@ -4,11 +4,14 @@
   "author": "Kai Ninomiya <kainino@chromium.org>",
   "license": "BSD-3-Clause",
   "scripts": {
+    "start": "concurrently 'tsc --watch' 'live-server --host=127.0.0.1 --port=8080 --no-browser --watch=index.html,boids.js'",
     "build": "tsc"
   },
   "devDependencies": {
     "@types/stats.js": "^0.17.0",
     "@webgpu/types": "^0.1.30",
+    "concurrently": "^8.0.1",
+    "live-server": "^1.2.2",
     "typescript": "^5.0.4"
   }
 }

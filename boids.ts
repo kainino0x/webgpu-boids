@@ -2,7 +2,10 @@
 
 function assert(condition: boolean, msg: string): asserts condition {
   if (!condition) {
-    document.getElementById('log')!.textContent = msg;
+    const log = document.getElementById('log')!;
+    if (!log.textContent) {
+      log.textContent = msg;
+    }
     throw new Error(msg);
   }
 }
@@ -21,6 +24,8 @@ const DEPTH_FORMAT = 'depth24plus';
 
 const NUM_BOIDS = 500;
 
+let running = true;
+
 // **************************************************************************
 // Device and canvas initialization
 // **************************************************************************
@@ -31,7 +36,9 @@ const adapter: GPUAdapter | null = await navigator.gpu.requestAdapter();
 assert(adapter !== null, 'requestAdapter failed');
 const device: GPUDevice = await adapter.requestDevice();
 device.onuncapturederror = (ev) => {
+  running = false;
   console.warn(ev.error);
+  assert(false, ev.error.message);
 };
 
 // Canvas context is initialized without a device.
@@ -119,18 +126,7 @@ const computeShaderModule: GPUShaderModule = device.createShaderModule({
       // kinematic update
       vPos = vPos + (vVel * params.deltaT);
       // Wrap around boundary
-      if vPos.x < -1.0 {
-        vPos.x = 1.0;
-      }
-      if vPos.x > 1.0 {
-        vPos.x = -1.0;
-      }
-      if vPos.y < -1.0 {
-        vPos.y = 1.0;
-      }
-      if vPos.y > 1.0 {
-        vPos.y = -1.0;
-      }
+      vPos = (vPos + 2.0 + 1.0) % 2.0 - 1.0;
       // Write back
       particlesB[index].pos = vPos;
       particlesB[index].vel = vVel;
@@ -421,7 +417,9 @@ function frame() {
   }
 
   stats.end();
-  requestAnimationFrame(frame);
+  if (running) {
+    requestAnimationFrame(frame);
+  }
 }
 requestAnimationFrame(frame);
 

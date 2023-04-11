@@ -24,11 +24,16 @@ const DEPTH_FORMAT = 'depth24plus';
 
 const NUM_BOIDS = 500;
 
-let running = true;
-
 // **************************************************************************
 // Device and canvas initialization
 // **************************************************************************
+
+function setCanvasSize(canvas: HTMLCanvasElement, w: number, h: number) {
+  canvas.width = w;
+  canvas.height = h;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+}
 
 // Device is initialized without a canvas. Can be used with zero or more canvases.
 assert('gpu' in navigator, 'WebGPU not supported');
@@ -36,26 +41,22 @@ const adapter: GPUAdapter | null = await navigator.gpu.requestAdapter();
 assert(adapter !== null, 'requestAdapter failed');
 const device: GPUDevice = await adapter.requestDevice();
 device.onuncapturederror = (ev) => {
-  running = false;
+  paused = true;
   console.warn(ev.error);
   assert(false, ev.error.message);
 };
 
 // Canvas context is initialized without a device.
 const canvas = document.getElementById('cvs') as HTMLCanvasElement;
-canvas.width = WIDTH;
-canvas.height = HEIGHT;
-canvas.style.width = '500px';
-canvas.style.height = '500px';
-const ctx: GPUCanvasContext | null = canvas.getContext('webgpu');
-assert(ctx !== null, 'Unable to create "webgpu" canvas context');
-const canvasContext = ctx;
+setCanvasSize(canvas, WIDTH, HEIGHT);
+const canvasContext: GPUCanvasContext = canvas.getContext('webgpu')!;
+assert(canvasContext !== null, 'Unable to create "webgpu" canvas context');
 
 // Configure the canvas context to associate it with a device and set its format.
 canvasContext.configure({ device, format: CANVAS_FORMAT });
 
 // **************************************************************************
-// Shaders
+// Compute Shader
 // **************************************************************************
 
 const computeShaderModule: GPUShaderModule = device.createShaderModule({
@@ -133,6 +134,23 @@ const computeShaderModule: GPUShaderModule = device.createShaderModule({
     }`,
 });
 
+// **************************************************************************
+// Compute pipeline setup
+// **************************************************************************
+
+const stepBoidsSimulation_pipeline: GPUComputePipeline =
+  device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: computeShaderModule,
+      entryPoint: 'stepBoidsSimulation', // Entry point to use as compute shader
+    },
+  });
+
+// **************************************************************************
+// Rendering Shaders
+// **************************************************************************
+
 // Shader module can define multiple entry points (here, vertex and fragment).
 const renderShaderModule: GPUShaderModule = device.createShaderModule({
   code: /* wgsl */ `
@@ -204,55 +222,40 @@ const renderShaderModule: GPUShaderModule = device.createShaderModule({
 });
 
 // **************************************************************************
-// Compute pipeline setup
-// **************************************************************************
-
-const stepBoidsSimulation_pipeline: GPUComputePipeline =
-  device.createComputePipeline({
-    layout: 'auto',
-    compute: {
-      module: computeShaderModule,
-      entryPoint: 'stepBoidsSimulation', // Which entry point to use as compute shader
-    },
-  });
-
-// **************************************************************************
 // Render pipeline setup
 // **************************************************************************
 
 const renderBoids_pipeline: GPURenderPipeline = device.createRenderPipeline({
   layout: 'auto',
   vertex: {
+    // List of vertex buffers
     buffers: [
-      // <---- list of vertex buffers
+      // Layout of vertex buffer 0, the instanced particles buffer
       {
-        // <---- Layout of vertex buffer 0, instanced particles buffer
-        arrayStride: 4 * 4,
+        arrayStride: 16,
         stepMode: 'instance',
+        // List of attributes inside this vertex buffer
         attributes: [
-          // <---- list of attributes inside this vertex buffer
-          { format: 'float32x2', offset: 0, shaderLocation: 0 }, // particle position
-          { format: 'float32x2', offset: 2 * 4, shaderLocation: 1 }, // particle velocity
+          { format: 'float32x2', offset: 0, shaderLocation: 0 }, // Particle position
+          { format: 'float32x2', offset: 8, shaderLocation: 1 }, // Particle velocity
         ],
       },
     ],
     module: renderShaderModule,
-    entryPoint: 'renderBoids_vert', // Which entry point to use as vertex shader
+    entryPoint: 'renderBoids_vert', // Entry point to use as vertex shader
   },
   primitive: { topology: 'triangle-list' },
   depthStencil: {
     format: DEPTH_FORMAT,
     depthWriteEnabled: true,
-    depthCompare: 'less', // configure depth test
+    // Configure depth test
+    depthCompare: 'less',
   },
   multisample: { count: 4 },
   fragment: {
     module: renderShaderModule,
-    entryPoint: 'renderBoids_frag', // Which entry point to use as fragment shader
-    targets: [
-      // <---- list of render attachments
-      { format: CANVAS_FORMAT },
-    ],
+    entryPoint: 'renderBoids_frag', // Entry point to use as fragment shader
+    targets: [{ format: CANVAS_FORMAT }], // List of render attachments
   },
 });
 
@@ -260,8 +263,9 @@ const renderBoids_pipeline: GPURenderPipeline = device.createRenderPipeline({
 // Resources setup
 // **************************************************************************
 
-// Create uniform buffer for simulation parameters
 const simParamBufferSize = 7 * Float32Array.BYTES_PER_ELEMENT;
+
+// Create uniform buffer for simulation parameters
 const simParamBuffer: GPUBuffer = device.createBuffer({
   mappedAtCreation: true, // Start the buffer in the 'mapped' state, for initialization
   size: simParamBufferSize,
@@ -304,8 +308,9 @@ for (let i = 0; i < 2; ++i) {
 // Get bind group layout automatically generated from shader
 const bindGroupLayout = stepBoidsSimulation_pipeline.getBindGroupLayout(0);
 
-// Create two bind groups, one for stepping from particleBuffers[0]
-// to [1] and one for stepping from [1] to [0] (ping-pong).
+// Create two bind groups:
+// one for stepping from particleBuffers[0] to [1],
+// one for stepping from particleBuffers[1] to [0] (ping-pong).
 const particleBindGroups: GPUBindGroup[] = new Array(2);
 for (let i = 0; i < 2; ++i) {
   particleBindGroups[i] = device.createBindGroup({
@@ -313,10 +318,7 @@ for (let i = 0; i < 2; ++i) {
     entries: [
       { binding: 0, resource: { buffer: simParamBuffer } },
       { binding: 1, resource: { buffer: particleBuffers[i] } },
-      {
-        binding: 2,
-        resource: { buffer: particleBuffers[(i + 1) % 2] },
-      },
+      { binding: 2, resource: { buffer: particleBuffers[(i + 1) % 2] } },
     ],
   });
 }
@@ -382,10 +384,12 @@ canvas.addEventListener('click', () => {
 
 function stepBoidsSimulation(commandEncoder: GPUCommandEncoder) {
   const passEncoder: GPUComputePassEncoder = commandEncoder.beginComputePass();
+
   passEncoder.setPipeline(stepBoidsSimulation_pipeline);
   // Simulate either from particleBuffers[0] -> particleBuffers[1] or vice versa.
   passEncoder.setBindGroup(0, particleBindGroups[frameNum % 2]);
   passEncoder.dispatchWorkgroups(Math.ceil(NUM_BOIDS / 64));
+
   passEncoder.end();
 }
 
@@ -397,10 +401,12 @@ function renderBoids(commandEncoder: GPUCommandEncoder) {
 
   const passEncoder: GPURenderPassEncoder =
     commandEncoder.beginRenderPass(renderPassDescriptor);
+
   passEncoder.setPipeline(renderBoids_pipeline);
   // Render from the particleBuffers[x] that was just updated.
   passEncoder.setVertexBuffer(0, particleBuffers[(frameNum + 1) % 2]);
   passEncoder.draw(6, NUM_BOIDS);
+
   passEncoder.end();
 }
 
@@ -419,9 +425,7 @@ function frame() {
   }
 
   stats.end();
-  if (running) {
-    requestAnimationFrame(frame);
-  }
+  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 

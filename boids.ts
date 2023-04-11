@@ -7,9 +7,9 @@ document.body.appendChild(stats.dom);
 
 // Based on http://austin-eng.com/webgpu-samples/samples/computeBoids
 (async () => {
-  const WIDTH = Math.floor(500 * window.devicePixelRatio);
+  const WIDTH = 500 * window.devicePixelRatio;
   const HEIGHT = WIDTH;
-  const SWAP_CHAIN_FORMAT = 'bgra8unorm';
+  const CANVAS_FORMAT = 'bgra8unorm';
   const DEPTH_FORMAT = 'depth24plus';
 
   const NUM_BOIDS = 500;
@@ -35,10 +35,10 @@ document.body.appendChild(stats.dom);
   canvas.style.height = '500px';
   const ctx: GPUCanvasContext | null = canvas.getContext('webgpu');
   assert(ctx !== null, 'Unable to create "webgpu" canvas context');
-  const canvasContext: GPUCanvasContext = ctx;
+  const canvasContext = ctx;
 
   // Configure the canvas context to associate it with a device and set its format.
-  canvasContext.configure({ device, format: SWAP_CHAIN_FORMAT });
+  canvasContext.configure({ device, format: CANVAS_FORMAT });
 
   // **************************************************************************
   // Shaders
@@ -129,13 +129,6 @@ document.body.appendChild(stats.dom);
         particlesB[index].vel = vVel;
       }`,
   });
-  if ('compilationInfo' in computeShaderModule) {
-    computeShaderModule.getCompilationInfo().then((info) => {
-      if (info.messages.length) {
-        console.log(info.messages);
-      }
-    });
-  }
 
   // Shader module can define multiple entry points (here, vertex and fragment).
   const renderShaderModule: GPUShaderModule = device.createShaderModule({
@@ -204,13 +197,6 @@ document.body.appendChild(stats.dom);
         return color;
       }`,
   });
-  if ('compilationInfo' in renderShaderModule) {
-    renderShaderModule.getCompilationInfo().then((info) => {
-      if (info.messages.length) {
-        console.log(info.messages);
-      }
-    });
-  }
 
   // **************************************************************************
   // Compute pipeline setup
@@ -260,7 +246,7 @@ document.body.appendChild(stats.dom);
       entryPoint: 'renderBoids_frag', // Which entry point to use as fragment shader
       targets: [
         // <---- list of render attachments
-        { format: SWAP_CHAIN_FORMAT },
+        { format: CANVAS_FORMAT },
       ],
     },
   });
@@ -338,7 +324,7 @@ document.body.appendChild(stats.dom);
   // This just a "scratch space": only the multisample-resolve result will be kept.
   const multisampleColorTexture: GPUTexture = device.createTexture({
     size: [WIDTH, HEIGHT],
-    format: SWAP_CHAIN_FORMAT,
+    format: CANVAS_FORMAT,
     usage: GPUTextureUsage.RENDER_ATTACHMENT,
     sampleCount: 4,
   });

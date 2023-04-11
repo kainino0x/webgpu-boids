@@ -126,7 +126,7 @@ const computeShaderModule: GPUShaderModule = device.createShaderModule({
       // kinematic update
       vPos = vPos + (vVel * params.deltaT);
       // Wrap around boundary
-      vPos = (vPos + 2.0 + 1.0) % 2.0 - 1.0;
+      vPos = (vPos + 1.0) % 1.0;
       // Write back
       particlesB[index].pos = vPos;
       particlesB[index].vel = vVel;
@@ -169,8 +169,10 @@ const renderShaderModule: GPUShaderModule = device.createShaderModule({
           vec3f(-sin(angle), cos(angle), 0.0),
           vec3f(0.0, 0.0, 1.0));
 
+      // map simulation space (0,0 to 1,1) to NDC (-1,-1 to 1,1)
+      let ndcPos = a_particlePos * 2.0 - 1.0;
       var vary: Varying;
-      vary.vtxpos = rotation * boid_vtxpos + vec3f(a_particlePos, 0.0);
+      vary.vtxpos = rotation * boid_vtxpos + vec3f(ndcPos, 0.0);
       vary.pos = vec4f(vary.vtxpos, 1.0);
       vary.normal = rotation * boid_normal;
       vary.index = instanceIndex;
@@ -267,10 +269,10 @@ const simParamBuffer: GPUBuffer = device.createBuffer({
 });
 const mappedRange: ArrayBuffer = simParamBuffer.getMappedRange();
 new Float32Array(mappedRange).set([
-  0.04, // deltaT
-  0.1, // rule1Distance
-  0.1, // rule2Distance
-  0.05, // rule3Distance
+  0.02, // deltaT
+  0.05, // rule1Distance
+  0.05, // rule2Distance
+  0.025, // rule3Distance
   0.05, // rule1Scale
   0.02, // rule2Scale
   0.005, // rule3Scale
@@ -280,8 +282,8 @@ simParamBuffer.unmap(); // Unmap it (detaches the ArrayBuffer)
 // Initialize particle buffers with random data
 const initialParticleData = new Float32Array(NUM_BOIDS * 4);
 for (let i = 0; i < NUM_BOIDS; ++i) {
-  initialParticleData[4 * i + 0] = 2 * (Math.random() - 0.5);
-  initialParticleData[4 * i + 1] = 2 * (Math.random() - 0.5);
+  initialParticleData[4 * i + 0] = Math.random();
+  initialParticleData[4 * i + 1] = Math.random();
   initialParticleData[4 * i + 2] = 2 * (Math.random() - 0.5) * 0.1;
   initialParticleData[4 * i + 3] = 2 * (Math.random() - 0.5) * 0.1;
 }
